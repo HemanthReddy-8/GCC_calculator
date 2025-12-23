@@ -1,53 +1,94 @@
 import streamlit as st
-from PIL import Image
 import numpy as np
+from PIL import Image
 
-def extract_rgb_values(image):
-    # Convert PIL image to a NumPy array for speed
-    img_array = np.array(image.convert("RGB"))
+def analyze_image(image):
+    # Convert PIL to NumPy array
+    img_arr = np.array(image.convert("RGB"))
     
-    # Calculate the mean across the width and height (axes 0 and 1)
-    avg_colors = np.mean(img_array, axis=(0, 1))
+    # 1. RGB and GCC Calculation
+    # Using float to prevent integer overflow
+    r = img_arr[:, :, 0].astype(float)
+    g = img_arr[:, :, 1].astype(float)
+    b = img_arr[:, :, 2].astype(float)
     
-    return int(avg_colors[0]), int(avg_colors[1]), int(avg_colors[2])
+    avg_r, avg_g, avg_b = np.mean(r), np.mean(g), np.mean(b)
+    
+    rgb_sum = avg_r + avg_g + avg_b
+    gcc_value = avg_g / rgb_sum if rgb_sum != 0 else 0
+    
+    # 2. HSV Masking for Pixel Counting
+    hsv_image = image.convert("HSV")
+    hsv_arr = np.array(hsv_image)
+    h, s, v = hsv_arr[:, :, 0], hsv_arr[:, :, 1], hsv_arr[:, :, 2]
 
-def calculate_gcc(avg_r, avg_g, avg_b):
-    total = avg_r + avg_g + avg_b
-    if total == 0:
-        return 0.0
-    return avg_g / total
+    # Vectorized logic (equivalent to your IF/ELIF structure)
+    white_mask = (s < 30) & (v > 200)
+    yellow_mask = (h >= 20) & (h <= 35) & (s >= 100) & (v >= 70)
+    brown_mask = (h >= 10) & (h <= 25) & (s >= 100) & (v >= 20) & (v <= 180)
+    green_mask = (h >= 40) & (h <= 80) & (s >= 60) & (v >= 70)
 
-# --- Streamlit UI ---
-st.title("Green Chromatic Coordinate (GCC) Calculator")
-st.write("Upload an image to calculate its average RGB values and GCC.")
+    total_w = np.sum(white_mask)
+    total_y = np.sum(yellow_mask)
+    total_br = np.sum(brown_mask)
+    total_g = np.sum(green_mask)
 
-uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+    # 3. Ratio Calculation
+    if total_g > 0:
+        ratio_w = total_w / total_g
+        ratio_br = total_br / total_g
+        ratio_y = total_y / total_g
+    else:
+        ratio_w = ratio_br = ratio_y = 0
+
+    return {
+        "gcc": gcc_value,
+        "counts": (total_w, total_br, total_y, total_g),
+        "ratios": (ratio_w, ratio_br, ratio_y)
+    }
+
+# --- STREAMLIT UI ---
+st.set_page_config(page_title="Crop Health Analyzer", layout="wide")
+st.title("🌿 Plant Disease & Health Ratio Analyzer")
+st.markdown("Upload a leaf image to calculate GCC and SEP Ratios (White, Brown, Yellow vs Green).")
+
+uploaded_file = st.file_uploader("Choose a leaf image...", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    # Display the image
+    # Display Image
     image = Image.open(uploaded_file)
-    st.image(image, caption='Uploaded Image', use_container_width=True)
     
-    # Run the calculations
-    avg_r, avg_g, avg_b = extract_rgb_values(image)
-    gcc_value = calculate_gcc(avg_r, avg_g, avg_b)
-    
-    # Display results in columns
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.subheader("Average RGB")
-        st.markdown(f"**Red:** {avg_r}")
-        st.markdown(f"**Green:** {avg_g}")
-        st.markdown(f"**Blue:** {avg_b}")
+        st.subheader("Input Image")
+        st.image(image, use_container_width=True)
         
     with col2:
-        st.subheader("GCC Analysis")
-        st.metric(label="GCC Value", value=f"{gcc_value:.4f}")
+        st.subheader("Analysis Results")
+        with st.spinner("Processing pixels..."):
+            results = analyze_image(image)
+            
+            # Metrics
+            st.metric("Green Chromatic Coordinate (GCC)", f"{results['gcc']:.4f}")
+            
+            st.write("---")
+            
+            # Ratios
+            rw, rb, ry = results['ratios']
+            m1, m2, m3 = st.columns(3)
+            m1.metric("W/G Ratio", f"{rw:.4f}")
+            m2.metric("BR/G Ratio", f"{rb:.4f}")
+            m3.metric("Y/G Ratio", f"{ry:.4f}")
 
-    # Visual feedback: a small color box showing the average color
-    st.write("Average Color Preview:")
-    st.markdown(
-        f'<div style="width:100%; height:50px; background-color:rgb({avg_r},{avg_g},{avg_b}); border-radius:10px; border: 1px solid #ddd;"></div>', 
-        unsafe_allow_html=True
-    )
+            # Raw Counts Table
+            st.write("---")
+            st.subheader("Pixel Counts")
+            tw, tbr, ty, tg = results['counts']
+            st.table({
+                "Category": ["White", "Brown", "Yellow", "Green"],
+                "Pixel Count": [tw, tbr, ty, tg]
+            })
+
+else:
+    st.info("Please upload an image to start the analysis.")
