@@ -27,11 +27,15 @@ def analyze_image(image):
     yellow_mask = (h >= 20) & (h <= 35) & (s >= 100) & (v >= 70)
     brown_mask = (h >= 10) & (h <= 25) & (s >= 100) & (v >= 20) & (v <= 180)
     green_mask = (h >= 40) & (h <= 80) & (s >= 60) & (v >= 70)
+    blue_mask = (h >= 90) & (h <= 130) & (s >= 60) & (v >= 70)
+    red_mask = ((h >= 0) & (h <= 10) | (h >= 160) & (h <= 180)) & (s >= 100) & (v >= 70)
 
     total_w = np.sum(white_mask)
     total_y = np.sum(yellow_mask)
     total_br = np.sum(brown_mask)
     total_g = np.sum(green_mask)
+    total_r = np.sum(red_mask)
+    total_b = np.sum(blue_mask)
 
     # 3. Ratio Calculation
     if total_g > 0:
@@ -43,7 +47,7 @@ def analyze_image(image):
 
     return {
         "gcc": gcc_value,
-        "counts": (total_w, total_br, total_y, total_g),
+        "counts": (total_w, total_br, total_y, total_g, total_r, total_b),
         "ratios": (ratio_w, ratio_br, ratio_y)
     }
 
@@ -80,10 +84,10 @@ if uploaded_files:
                 m2.metric("BR/G Ratio", f"{rb:.4f}")
                 m3.metric("Y/G Ratio", f"{ry:.4f}")
                 
-                tw, tbr, ty, tg = results['counts']
+                tw, tbr, ty, tg, tr, tb = results['counts']
                 st.table({
-                    "Category": ["White", "Brown", "Yellow", "Green"],
-                    "Pixel Count": [tw, tbr, ty, tg]
+                    "Category": ["White", "Brown", "Yellow", "Green"," Red", "Blue"],
+                    "Pixel Count": [tw, tbr, ty, tg, tr, tb]
                 })
 
         # Append data for the final summary table
@@ -94,7 +98,9 @@ if uploaded_files:
             "BR/G Ratio": round(rb, 4),
             "Y/G Ratio": round(ry, 4),
             "Green Pixels": tg,
-            "Disease Pixels (W+BR+Y)": tw + tbr + ty
+            "Disease Pixels (W+BR+Y)": tw + tbr + ty,
+            "Red Pixels": tr,
+            "Blue Pixels": tb
         })
 
     # --- SUMMARY TABLE ---
