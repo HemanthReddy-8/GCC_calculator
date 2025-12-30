@@ -98,9 +98,9 @@ if uploaded_files:
             "BR/G Ratio": round(rb, 4),
             "Y/G Ratio": round(ry, 4),
             "Green Pixels": tg,
-            "Disease Pixels (W+BR+Y)": tw + tbr + ty,
             "Red Pixels": tr,
-            "Blue Pixels": tb
+            "Blue Pixels": tb,
+            "Disease Pixels (W+BR+Y)": tw + tbr + ty
         })
 
     # --- SUMMARY TABLE ---
