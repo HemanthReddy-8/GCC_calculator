@@ -1,19 +1,19 @@
 import streamlit as st
 import numpy as np
+import pandas as pd
 from PIL import Image
 
 def analyze_image(image):
+    """Performs pixel analysis for GCC and disease ratios."""
     # Convert PIL to NumPy array
     img_arr = np.array(image.convert("RGB"))
     
     # 1. RGB and GCC Calculation
-    # Using float to prevent integer overflow
     r = img_arr[:, :, 0].astype(float)
     g = img_arr[:, :, 1].astype(float)
     b = img_arr[:, :, 2].astype(float)
     
     avg_r, avg_g, avg_b = np.mean(r), np.mean(g), np.mean(b)
-    
     rgb_sum = avg_r + avg_g + avg_b
     gcc_value = avg_g / rgb_sum if rgb_sum != 0 else 0
     
@@ -22,7 +22,7 @@ def analyze_image(image):
     hsv_arr = np.array(hsv_image)
     h, s, v = hsv_arr[:, :, 0], hsv_arr[:, :, 1], hsv_arr[:, :, 2]
 
-    # Vectorized logic (equivalent to your IF/ELIF structure)
+    # Vectorized logic for color masks
     white_mask = (s < 30) & (v > 200)
     yellow_mask = (h >= 20) & (h <= 35) & (s >= 100) & (v >= 70)
     brown_mask = (h >= 10) & (h <= 25) & (s >= 100) & (v >= 20) & (v <= 180)
@@ -48,47 +48,71 @@ def analyze_image(image):
     }
 
 # --- STREAMLIT UI ---
-st.set_page_config(page_title="Crop Health Analyzer", layout="wide")
-st.title("🌿 Plant Disease & Health Ratio Analyzer")
-st.markdown("Upload a leaf image to calculate GCC and SEP Ratios (White, Brown, Yellow vs Green).")
+st.set_page_config(page_title="Batch Crop Health Analyzer", layout="wide")
+st.title("🌿 Batch Plant Disease & Ratio Analyzer")
+st.markdown("Upload multiple leaf images to compare health metrics and disease ratios.")
 
-uploaded_file = st.file_uploader("Choose a leaf image...", type=["jpg", "jpeg", "png"])
+# Enable Batch Mode by setting accept_multiple_files=True
+uploaded_files = st.file_uploader("Choose leaf images...", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
-if uploaded_file is not None:
-    # Display Image
-    image = Image.open(uploaded_file)
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("Input Image")
-        st.image(image, use_container_width=True)
+if uploaded_files:
+    summary_data = []
+
+    # Loop through all uploaded files
+    for uploaded_file in uploaded_files:
+        image = Image.open(uploaded_file)
         
-    with col2:
-        st.subheader("Analysis Results")
-        with st.spinner("Processing pixels..."):
-            results = analyze_image(image)
+        with st.expander(f"🔍 Detailed Analysis: {uploaded_file.name}", expanded=False):
+            col1, col2 = st.columns([1, 1])
             
-            # Metrics
-            st.metric("Green Chromatic Coordinate (GCC)", f"{results['gcc']:.4f}")
-            
-            st.write("---")
-            
-            # Ratios
-            rw, rb, ry = results['ratios']
-            m1, m2, m3 = st.columns(3)
-            m1.metric("W/G Ratio", f"{rw:.4f}")
-            m2.metric("BR/G Ratio", f"{rb:.4f}")
-            m3.metric("Y/G Ratio", f"{ry:.4f}")
+            with col1:
+                st.image(image, use_container_width=True, caption=f"Original: {uploaded_file.name}")
+                
+            with col2:
+                results = analyze_image(image)
+                
+                # Metrics
+                st.metric("Green Chromatic Coordinate (GCC)", f"{results['gcc']:.4f}")
+                
+                rw, rb, ry = results['ratios']
+                m1, m2, m3 = st.columns(3)
+                m1.metric("W/G Ratio", f"{rw:.4f}")
+                m2.metric("BR/G Ratio", f"{rb:.4f}")
+                m3.metric("Y/G Ratio", f"{ry:.4f}")
+                
+                tw, tbr, ty, tg = results['counts']
+                st.table({
+                    "Category": ["White", "Brown", "Yellow", "Green"],
+                    "Pixel Count": [tw, tbr, ty, tg]
+                })
 
-            # Raw Counts Table
-            st.write("---")
-            st.subheader("Pixel Counts")
-            tw, tbr, ty, tg = results['counts']
-            st.table({
-                "Category": ["White", "Brown", "Yellow", "Green"],
-                "Pixel Count": [tw, tbr, ty, tg]
-            })
+        # Append data for the final summary table
+        summary_data.append({
+            "File Name": uploaded_file.name,
+            "GCC": round(results['gcc'], 4),
+            "W/G Ratio": round(rw, 4),
+            "BR/G Ratio": round(rb, 4),
+            "Y/G Ratio": round(ry, 4),
+            "Green Pixels": tg,
+            "Disease Pixels (W+BR+Y)": tw + tbr + ty
+        })
+
+    # --- SUMMARY TABLE ---
+    st.divider()
+    st.header("📊 Batch Summary Table")
+    df_summary = pd.DataFrame(summary_data)
+    
+    # Highlight highest and lowest GCC values for better insight
+    st.dataframe(df_summary, use_container_width=True)
+
+    # Allow downloading the summary as CSV
+    csv = df_summary.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Download Summary as CSV",
+        data=csv,
+        file_name="leaf_health_summary.csv",
+        mime="text/csv",
+    )
 
 else:
-    st.info("Please upload an image to start the analysis.")
+    st.info("Please upload one or more images to start the batch analysis.")
